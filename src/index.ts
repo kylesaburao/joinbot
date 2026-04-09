@@ -1,89 +1,89 @@
 import { Client, Events, GatewayIntentBits } from 'discord.js';
-import { userVoiceData } from './db/store';
 
-const getBotToken = (): string => {
-    const token = process.env.DISCORD_BOT_TOKEN;
-    if (!token) {
-        throw new Error('DISCORD_BOT_TOKEN environment variable is not set.');
-    }
-    return token;
+/**
+ * SETUP:
+ * - Add custom role for TARGET_ROLE_NAME
+ * - Ensure bot role is above TARGET_ROLE_NAME
+ */
+
+const {
+    DISCORD_BOT_TOKEN = undefined,
+    DEV_MODE = false,
+    TARGET_VC_CHANNEL_ID = '',
+    TARGET_ROLE_NAME = '',
+    GUILD_ID = ''
+} = process.env;
+
+if ([DISCORD_BOT_TOKEN, TARGET_VC_CHANNEL_ID, TARGET_ROLE_NAME, GUILD_ID].some(x => !x)) {
+    throw new Error('Invalid .env config');
+}
+
+const getBotToken = (): string | undefined => {
+    return DISCORD_BOT_TOKEN;
 };
 
-const main = async (): Promise<void> => {
-    const client = new Client({
+const main = async () => {
+    const botClient = new Client({
         intents: [
             GatewayIntentBits.Guilds,
-            GatewayIntentBits.GuildMessages,
-            GatewayIntentBits.MessageContent,
-            GatewayIntentBits.GuildVoiceStates,
+            GatewayIntentBits.GuildMembers,
+            // GatewayIntentBits.GuildMessages,
+            GatewayIntentBits.GuildVoiceStates
         ],
     });
 
-    client.once(Events.ClientReady, (readyClient) => {
-        console.log(`Ready! Logged in as ${readyClient.user.tag}`);
+    let onInitSuccess: Function;
+    const onInit = new Promise((res) => {
+        onInitSuccess = res;
     });
-    await client.login(getBotToken());
-
-    client.on(Events.MessageCreate, (message) => {
-        if (message.content === '!ping') {
-            message.reply('Pong!');
-        }
-
-        if (message.content === '!leaderboard') {
-            const leaderboard = Array.from(userVoiceData.values())
-                .sort((a, b) => b.accumulatedTime - a.accumulatedTime)
-                .slice(0, 10)
-                .map((data, index) => {
-                    const timeInSeconds = Math.floor(data.accumulatedTime / 1000);
-                    return `${index + 1}. <@${data.userId}> - ${timeInSeconds} seconds`;
-                })
-                .join('\n');
-
-            message.reply(`Voice Channel Leaderboard:\n${leaderboard}`);
-        }
+    botClient.once(Events.ClientReady, () => {
+        onInitSuccess();
     });
+    await botClient.login(getBotToken());
+    await onInit;
+    console.log('Bot is running...');
+
+    if (DEV_MODE === 'true' || DEV_MODE === '1') {
+        botClient.on(Events.MessageCreate, (message) => {
+            if (message.content === '!ping') {
+                message.reply('Pong!');
+            }
+        });
+    }
+
+    const targetGuild = botClient.guilds.cache.find(g => g.id === GUILD_ID);
+    if (!targetGuild) {
+        throw new Error(`Could not find guild from ID ${GUILD_ID}`);
+    }
+    const targetRole = targetGuild.roles.cache.find(r => r.name === TARGET_ROLE_NAME);
+    if (!targetRole) {
+        throw new Error(`Could not find role from name ${TARGET_ROLE_NAME}`);
+    }
     
-    client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+    botClient.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         const userId = newState.id;
-        const isChannelJoined = oldState.channelId === null && newState.channelId !== null;
-        const isChannelLeft = oldState.channelId !== null && newState.channelId === null;
-        const isChannelSwitched = oldState.channelId !== null && newState.channelId !== null && oldState.channelId !== newState.channelId;
+        const newChannelId = newState.channelId;
         const now = new Date();
 
-        if (isChannelLeft || isChannelSwitched) {
-            const userData = userVoiceData.get(userId);
+        const isJoinedTargetVCChannel = newChannelId === TARGET_VC_CHANNEL_ID;
+        const isLeftTargetVCChannel = newChannelId !== TARGET_VC_CHANNEL_ID;
 
-            if (userData) { // false -> user didn't join before this point so there's nothing to do
-                const timeSpentInCurrentChannel = now.getTime() - userData.lastJoin.getTime();
-                userData.accumulatedTime += timeSpentInCurrentChannel;
-
-                const REPORT_CHANNEL = '<SET>';
-                const channel = await client.channels.fetch(REPORT_CHANNEL);
-                if (channel && channel.isTextBased() && channel.isSendable()) {
-                    const channelName = oldState.channel?.name || 'Unknown Channel';
-                    const timeSpentSinceContiguousJoin = Math.floor(timeSpentInCurrentChannel / 1000);
-                    const timeSpentTotal = Math.floor(userData.accumulatedTime / 1000);
-                    const message = `<@${userId}> has spent ${timeSpentSinceContiguousJoin} seconds in ${channelName} since joining, and a total of ${timeSpentTotal} seconds in voice chat.`;
-                    await channel.send(message);
+        try {
+            if (isJoinedTargetVCChannel) {
+                console.log(`${userId} joined ${newChannelId} @ ${now}`)
+                if (newState.member && !newState.member.roles.cache.has(targetRole.id)) {
+                    newState.member.roles.add(targetRole.id);
                 }
-
-                if (isChannelSwitched) {
-                    userData.lastJoin = now;
-                    userData.lastChannelIdJoined = newState.channelId!;
-                }
-
-                userVoiceData.set(userId, userData);
             }
-        }
-
-        if (isChannelJoined) {
-            const existingData = userVoiceData.get(userId);
-            userVoiceData.set(userId, {
-                userId,
-                lastJoin: now,
-                lastChannelIdJoined: newState.channelId!,
-                accumulatedTime: existingData?.accumulatedTime ?? 0,
-            });
+    
+            if (isLeftTargetVCChannel) {
+                console.log(`${userId} left ${newChannelId} @ ${now}`);
+                if (newState.member && newState.member.roles.cache.has(targetRole.id)) {
+                    newState.member.roles.remove(targetRole.id);
+                }
+            }
+        } catch (error) {
+            console.error('An error occured while processing role change:', error);
         }
     });
 };

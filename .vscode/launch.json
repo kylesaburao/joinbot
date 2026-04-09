@@ -6,7 +6,7 @@
       "request": "launch",
       "name": "Debug Server",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["--require", "ts-node/register"],
+      "runtimeArgs": ["--require", "ts-node/register", "--env-file", ".env"],
       "args": ["${workspaceFolder}/src/index.ts"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",

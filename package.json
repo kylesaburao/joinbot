@@ -2,7 +2,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "dev": "ts-node src/index.ts --env-file=.env"
   },
   "dependencies": {
     "discord.js": "^14.25.1"
