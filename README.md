@@ -1,5 +1,7 @@
 # Joinbot
 
+MOVED TO https://github.com/ssss-sfu/coursebot.
+
 Intended for Software Systems Student Society (Study Time).
 
 A Discord bot that automatically assigns a role to members when they join a specific voice channel, and removes it when they leave.
