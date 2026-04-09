@@ -20,6 +20,8 @@ GUILD_ID = os.environ.get("GUILD_ID", "")
 if not all([DISCORD_BOT_TOKEN, TARGET_VC_CHANNEL_ID, TARGET_ROLE_NAME, GUILD_ID]):
     raise RuntimeError("Invalid .env config", [DISCORD_BOT_TOKEN, TARGET_VC_CHANNEL_ID, TARGET_ROLE_NAME, GUILD_ID])
 
+GUILD_ID_VALUE = int(GUILD_ID)
+
 intents = discord.Intents.default()
 intents.members = True
 intents.voice_states = True
@@ -31,7 +33,7 @@ bot = discord.Client(intents=intents)
 async def on_ready():
     print("Bot is running...")
 
-    target_guild = bot.get_guild(int(GUILD_ID))
+    target_guild = bot.get_guild(GUILD_ID_VALUE)
     if not target_guild:
         raise RuntimeError(f"Could not find guild from ID {GUILD_ID}")
 
@@ -53,7 +55,7 @@ async def on_voice_state_update(
     before: discord.VoiceState,
     after: discord.VoiceState,
 ):
-    target_guild = bot.get_guild(int(GUILD_ID))
+    target_guild = bot.get_guild(GUILD_ID_VALUE)
     if not target_guild or member.guild.id != target_guild.id:
         return
 
